@@ -12,25 +12,24 @@ on:
 env:
   LEPTONICA_VERSION: "1.82.0"
   TESSERACT_VERSION: "5.3.1"
-  CENTOS_CONTAINER_IMAGE: "quay.io/centos/centos:stream8"
   SPEC_FILENAME: "tesseract-ocr-custom.spec"
 
 jobs:
   build_and_package_tesseract:
     runs-on: ubuntu-latest
     container:
-      image: quay.io/centos/centos:stream8
+      image: almalinux:8
       options: --privileged
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Update dnf and install basic dependencies
         run: |
           dnf -y update
           dnf -y install dnf-plugins-core
-          dnf -y config-manager --set-enabled crb || echo "Attempted to enable CRB repo, proceeding..."
+          dnf -y config-manager --set-enabled powertools || echo "Attempted to enable PowerTools repo, proceeding..."
           dnf -y install epel-release
           dnf -y groupinstall 'Development Tools'
           dnf -y install \
@@ -88,8 +87,11 @@ jobs:
           echo "Creating RPM build directories and ${{ env.SPEC_FILENAME }} file"
           mkdir -p ${HOME}/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
           SPEC_FILE_PATH="${HOME}/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}"
+          
+          # Generate changelog date in the correct format
+          CHANGELOG_DATE=$(date +"%a %b %d %Y")
 
-          cat << 'SPEC_EOF' > "${SPEC_FILE_PATH}"
+          cat << SPEC_EOF > "${SPEC_FILE_PATH}"
           Name:       tesseract-ocr-custom
           Version:    ${{ env.TESSERACT_VERSION }}
           Release:    1.el8.leptonica${{ env.LEPTONICA_VERSION }}
@@ -110,6 +112,7 @@ jobs:
           Custom build of Tesseract OCR Engine version ${{ env.TESSERACT_VERSION }}
           This package includes a custom build of Leptonica version ${{ env.LEPTONICA_VERSION }}.
           Files are installed in %{install_prefix}.
+          Built on AlmaLinux 8 for RHEL 8 compatibility.
 
           %install
           mkdir -p %{buildroot}%{install_prefix}/bin
@@ -158,8 +161,8 @@ jobs:
           %postun -p /sbin/ldconfig
 
           %changelog
-          * $(date +"%a %b %d %Y") GitHub Actions <actions@github.com> - ${{ env.TESSERACT_VERSION }}-1.leptonica${{ env.LEPTONICA_VERSION }}
-          - Automated build of Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} via GitHub Actions.
+          * ${CHANGELOG_DATE} GitHub Actions <actions@github.com> - ${{ env.TESSERACT_VERSION }}-1.el8.leptonica${{ env.LEPTONICA_VERSION }}
+          - Automated build of Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} via GitHub Actions on AlmaLinux 8.
           SPEC_EOF
           echo "SPEC_FILE_PATH=${SPEC_FILE_PATH}" >> $GITHUB_OUTPUT
 
@@ -170,21 +173,212 @@ jobs:
           find ${HOME}/rpmbuild/RPMS -name "*.rpm" -print
 
       - name: Upload RPM as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tesseract-ocr-rpm
           path: ~/rpmbuild/RPMS/**/*.rpm
           if-no-files-found: error
 
       - name: Upload Spec File as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: tesseract-ocr-spec
           path: ~/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}
           if-no-files-found: error
 
+  build_for_amazon_linux:
+    runs-on: ubuntu-latest
+    container:
+      image: amazonlinux:2
+      options: --privileged
+
+    steps:
+      # Manual checkout since actions/checkout@v4 requires newer glibc than Amazon Linux 2 provides
+      - name: Install git
+        run: |
+          yum -y install git
+
+      - name: Configure git safe directory
+        run: |
+          git config --global --add safe.directory /__w/tesseract/tesseract
+
+      - name: Manual checkout
+        run: |
+          git clone https://github.com/${{ github.repository }}.git .
+          git fetch origin ${{ github.sha }}
+          git checkout ${{ github.sha }}
+
+      - name: Update yum and install basic dependencies
+        run: |
+          yum -y update
+          yum -y install amazon-linux-extras
+          amazon-linux-extras enable epel
+          yum -y install epel-release
+          yum -y groupinstall 'Development Tools'
+          yum -y install \
+            automake \
+            autoconf \
+            libtool \
+            pkg-config \
+            wget \
+            cmake \
+            gcc-c++ \
+            libpng-devel \
+            libtiff-devel \
+            zlib-devel \
+            libjpeg-turbo-devel \
+            libicu-devel \
+            pango-devel \
+            cairo-devel \
+            rpm-build \
+            autoconf-archive \
+            patch
+
+      - name: Install libwebp from source (not available in AL2 repos)
+        run: |
+          cd /tmp
+          wget https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.2.4.tar.gz
+          tar -xzf libwebp-1.2.4.tar.gz
+          cd libwebp-1.2.4
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+
+      - name: Build Leptonica
+        run: |
+          echo "Building Leptonica ${{ env.LEPTONICA_VERSION }}"
+          cd /tmp
+          wget -O leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz https://github.com/DanBloomberg/leptonica/archive/refs/tags/${{ env.LEPTONICA_VERSION }}.tar.gz
+          tar -xzf leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz
+          cd leptonica-${{ env.LEPTONICA_VERSION }}
+          ./autogen.sh
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+
+      - name: Build Tesseract OCR
+        run: |
+          echo "Building Tesseract OCR ${{ env.TESSERACT_VERSION }}"
+          cd /tmp
+          git clone https://github.com/tesseract-ocr/tesseract.git tesseract-ocr
+          cd tesseract-ocr
+          git checkout ${{ env.TESSERACT_VERSION }}
+          ./autogen.sh
+          export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+          tesseract --version
+
+      - name: Prepare RPM build environment and Spec File for AL2
+        id: prepare_rpm_spec_al2
+        run: |
+          echo "Creating RPM build directories and AL2 spec file"
+          mkdir -p ${HOME}/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          SPEC_FILE_PATH="${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec"
+          
+          # Generate changelog date in the correct format
+          CHANGELOG_DATE=$(date +"%a %b %d %Y")
+
+          cat << SPEC_EOF > "${SPEC_FILE_PATH}"
+          Name:       tesseract-ocr-custom
+          Version:    ${{ env.TESSERACT_VERSION }}
+          Release:    1.amzn2.leptonica${{ env.LEPTONICA_VERSION }}
+          Summary:    Tesseract OCR Engine (${{ env.TESSERACT_VERSION }}) with Leptonica (${{ env.LEPTONICA_VERSION }})
+          License:    Apache-2.0
+          URL:        https://github.com/tesseract-ocr/tesseract
+
+          Requires:   libicu
+          Requires:   libpng 
+          Requires:   libtiff 
+          Requires:   zlib 
+          Requires:   libjpeg-turbo
+
+          %global install_prefix /usr/local
+
+          %description
+          Custom build of Tesseract OCR Engine version ${{ env.TESSERACT_VERSION }}
+          This package includes a custom build of Leptonica version ${{ env.LEPTONICA_VERSION }}.
+          Files are installed in %{install_prefix}.
+          Built on Amazon Linux 2 for maximum compatibility.
+
+          %install
+          mkdir -p %{buildroot}%{install_prefix}/bin
+          mkdir -p %{buildroot}%{install_prefix}/lib/pkgconfig
+          mkdir -p %{buildroot}%{install_prefix}/lib
+          mkdir -p %{buildroot}%{install_prefix}/include/tesseract
+          mkdir -p %{buildroot}%{install_prefix}/include/leptonica
+          mkdir -p %{buildroot}%{install_prefix}/share/tessdata
+          mkdir -p %{buildroot}%{install_prefix}/share/man/man1
+
+          cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
+          
+          # Copy all library files and symlinks
+          cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
+          
+          cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          cp -a %{install_prefix}/lib/pkgconfig/leptonica.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          
+          # Copy contents of include directories
+          cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
+          cp -a %{install_prefix}/include/leptonica/* %{buildroot}%{install_prefix}/include/leptonica/
+          
+          if [ -d "%{install_prefix}/share/tessdata" ]; then
+            find %{install_prefix}/share/tessdata -maxdepth 1 -type f \( -name "*.configs" -o -name "*.config" -o -name "pdf.ttf" \) -exec cp -a {} %{buildroot}%{install_prefix}/share/tessdata/ \;
+            [ -f "%{install_prefix}/share/tessdata/osd.traineddata" ] && cp -a %{install_prefix}/share/tessdata/osd.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+            [ -f "%{install_prefix}/share/tessdata/eng.traineddata" ] && cp -a %{install_prefix}/share/tessdata/eng.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+          fi
+          
+          [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
+
+          %files
+          %{install_prefix}/bin/tesseract
+          %{install_prefix}/lib/*
+          %{install_prefix}/lib/pkgconfig/tesseract.pc
+          %{install_prefix}/lib/pkgconfig/leptonica.pc
+          %dir %{install_prefix}/include/tesseract
+          %{install_prefix}/include/tesseract/*
+          %dir %{install_prefix}/include/leptonica
+          %{install_prefix}/include/leptonica/*
+          %dir %{install_prefix}/share/tessdata
+          %{install_prefix}/share/tessdata/*
+          %dir %{install_prefix}/share/man/man1
+          %optional %{install_prefix}/share/man/man1/tesseract.1
+
+          %post -p /sbin/ldconfig
+          %postun -p /sbin/ldconfig
+
+          %changelog
+          * ${CHANGELOG_DATE} GitHub Actions <actions@github.com> - ${{ env.TESSERACT_VERSION }}-1.amzn2.leptonica${{ env.LEPTONICA_VERSION }}
+          - Automated build of Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} via GitHub Actions on Amazon Linux 2.
+          SPEC_EOF
+          echo "SPEC_FILE_PATH=${SPEC_FILE_PATH}" >> $GITHUB_OUTPUT
+
+      - name: Build RPM for Amazon Linux 2
+        run: |
+          rpmbuild -bb ${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec --define "_sourcedir /tmp" --define "_topdir ${HOME}/rpmbuild"
+          echo "Amazon Linux 2 RPMs created:"
+          find ${HOME}/rpmbuild/RPMS -name "*.rpm" -print
+
+      - name: Upload Amazon Linux 2 RPM as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-ocr-rpm-al2
+          path: ~/rpmbuild/RPMS/**/*.rpm
+          if-no-files-found: error
+
+      - name: Upload Amazon Linux 2 Spec File as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-ocr-spec-al2
+          path: ~/rpmbuild/SPECS/tesseract-ocr-al2.spec
+          if-no-files-found: error
+
   publish_to_obs:
-    needs: build_and_package_tesseract
+    needs: [build_and_package_tesseract, build_for_amazon_linux]
     runs-on: ubuntu-latest
     
     steps:
@@ -194,13 +388,13 @@ jobs:
           sudo apt-get install -y osc
 
       - name: Download RPM artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-rpm
           path: /tmp/tesseract-rpm-artifact
 
       - name: Download Spec File artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-spec
           path: /tmp/tesseract-spec-artifact
@@ -296,26 +490,38 @@ jobs:
           fi
 
   publish_to_github_release:
-    needs: build_and_package_tesseract
+    needs: [build_and_package_tesseract, build_for_amazon_linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download RPM artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-rpm
           path: /tmp/tesseract-rpm-artifact
 
       - name: Download Spec File artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-spec
           path: /tmp/tesseract-spec-artifact
+
+      - name: Download Amazon Linux 2 RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tesseract-ocr-rpm-al2
+          path: /tmp/tesseract-rpm-al2-artifact
+
+      - name: Download Amazon Linux 2 Spec File artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tesseract-ocr-spec-al2
+          path: /tmp/tesseract-spec-al2-artifact
 
       - name: List downloaded artifacts for release
         run: |
@@ -323,12 +529,17 @@ jobs:
           ls -R /tmp/tesseract-rpm-artifact
           echo "Spec artifact contents for release:"
           ls -R /tmp/tesseract-spec-artifact
+          echo "Amazon Linux 2 RPM artifact contents:"
+          ls -R /tmp/tesseract-rpm-al2-artifact
+          echo "Amazon Linux 2 Spec artifact contents:"
+          ls -R /tmp/tesseract-spec-al2-artifact
 
       - name: Create GitHub Release and Upload Assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: v${{ env.TESSERACT_VERSION }}-leptonica${{ env.LEPTONICA_VERSION }}
         run: |
+          # Find RHEL 8 compatible files
           RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact -name "*.rpm" -type f -print -quit)
           if [ -z "$RPM_FILE_PATH" ]; then
             echo "Error: RPM file not found in /tmp/tesseract-rpm-artifact."
@@ -340,20 +551,41 @@ jobs:
             exit 1
           fi
           
+          # Find Amazon Linux 2 files
+          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-al2-artifact -name "*.rpm" -type f -print -quit)
+          if [ -z "$AL2_RPM_FILE_PATH" ]; then
+            echo "Error: Amazon Linux 2 RPM file not found."
+            exit 1
+          fi
+          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-al2-artifact -name "*.spec" -type f -print -quit)
+          if [ -z "$AL2_SPEC_FILE_PATH" ]; then
+            echo "Error: Amazon Linux 2 Spec file not found."
+            exit 1
+          fi
+          
           # Create release notes file
           cat << 'RELEASE_NOTES_EOF' > release_notes.md
           Automated release of Tesseract OCR ${{ env.TESSERACT_VERSION }} (custom build with Leptonica ${{ env.LEPTONICA_VERSION }}). 
 
           ## What's included:
-          - CentOS 8 Stream RPM package
-          - RPM spec file
+          - AlmaLinux 8 RPM package (RHEL 8 compatible)
+          - Amazon Linux 2 RPM package
+          - RPM spec files for both builds
 
           ## Installation:
+          
+          ### For RHEL 8 / AlmaLinux 8 / Rocky Linux 8:
           ```bash
-          # Install the RPM
-          sudo rpm -i tesseract-ocr-custom-*.rpm
-
-          # Verify installation
+          sudo rpm -i tesseract-ocr-custom-*el8*.rpm
+          ```
+          
+          ### For Amazon Linux 2:
+          ```bash
+          sudo rpm -i tesseract-ocr-custom-*amzn2*.rpm
+          ```
+          
+          ### Verify installation:
+          ```bash
           tesseract --version
           ```
 
@@ -364,7 +596,8 @@ jobs:
           - Optimized for performance with parallel processing
 
           ## Build Configuration:
-          - Compiler: GCC 11+
+          - RHEL 8 compatible build: AlmaLinux 8 (GCC 8+)
+          - Amazon Linux 2 build: Amazon Linux 2 (GCC 7+)
           - Build type: Release with optimizations
           - Install prefix: /usr/local
 
@@ -378,6 +611,8 @@ jobs:
             --title "Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }}" \
             --notes-file release_notes.md \
             "${RPM_FILE_PATH}" \
-            "${SPEC_FILE_PATH}"
+            "${SPEC_FILE_PATH}" \
+            "${AL2_RPM_FILE_PATH}" \
+            "${AL2_SPEC_FILE_PATH}"
           
           echo "GitHub Release created and assets uploaded."
