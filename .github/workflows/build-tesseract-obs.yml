@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/obs-publish-workflow
     paths:
       - '.github/workflows/build-tesseract-obs.yml'
   workflow_dispatch:
@@ -18,7 +19,7 @@ jobs:
   build_and_package_tesseract:
     runs-on: ubuntu-latest
     container:
-      image: ${{ env.CENTOS_CONTAINER_IMAGE }}
+      image: quay.io/centos/centos:stream8
       options: --privileged
 
     steps:
