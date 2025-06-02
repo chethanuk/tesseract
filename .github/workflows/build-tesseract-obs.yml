@@ -1,0 +1,382 @@
+name: Build Tesseract OCR RPM and Publish to OBS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-tesseract-obs.yml'
+  workflow_dispatch:
+
+env:
+  LEPTONICA_VERSION: "1.82.0"
+  TESSERACT_VERSION: "5.3.1"
+  CENTOS_CONTAINER_IMAGE: "quay.io/centos/centos:stream8"
+  SPEC_FILENAME: "tesseract-ocr-custom.spec"
+
+jobs:
+  build_and_package_tesseract:
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ env.CENTOS_CONTAINER_IMAGE }}
+      options: --privileged
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Update dnf and install basic dependencies
+        run: |
+          dnf -y update
+          dnf -y install dnf-plugins-core
+          dnf -y config-manager --set-enabled crb || echo "Attempted to enable CRB repo, proceeding..."
+          dnf -y install epel-release
+          dnf -y groupinstall 'Development Tools'
+          dnf -y install \
+            automake \
+            autoconf \
+            libtool \
+            pkg-config \
+            git \
+            wget \
+            cmake \
+            gcc-c++ \
+            libpng-devel \
+            libtiff-devel \
+            zlib-devel \
+            libwebp-devel \
+            libjpeg-turbo-devel \
+            libicu-devel \
+            pango-devel \
+            cairo-devel \
+            rpm-build \
+            autoconf-archive \
+            patch
+
+      - name: Build Leptonica
+        run: |
+          echo "Building Leptonica ${{ env.LEPTONICA_VERSION }}"
+          cd /tmp
+          wget -O leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz https://github.com/DanBloomberg/leptonica/archive/refs/tags/${{ env.LEPTONICA_VERSION }}.tar.gz
+          tar -xzf leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz
+          cd leptonica-${{ env.LEPTONICA_VERSION }}
+          ./autogen.sh
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+
+      - name: Build Tesseract OCR
+        run: |
+          echo "Building Tesseract OCR ${{ env.TESSERACT_VERSION }}"
+          cd /tmp
+          git clone https://github.com/tesseract-ocr/tesseract.git tesseract-ocr
+          cd tesseract-ocr
+          git checkout ${{ env.TESSERACT_VERSION }}
+          ./autogen.sh
+          export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
+          ./configure --prefix=/usr/local
+          make -j$(nproc)
+          make install
+          ldconfig
+          tesseract --version
+
+      - name: Prepare RPM build environment and Spec File
+        id: prepare_rpm_spec
+        run: |
+          echo "Creating RPM build directories and ${{ env.SPEC_FILENAME }} file"
+          mkdir -p ${HOME}/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          SPEC_FILE_PATH="${HOME}/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}"
+
+          cat << 'SPEC_EOF' > "${SPEC_FILE_PATH}"
+          Name:       tesseract-ocr-custom
+          Version:    ${{ env.TESSERACT_VERSION }}
+          Release:    1.el8.leptonica${{ env.LEPTONICA_VERSION }}
+          Summary:    Tesseract OCR Engine (${{ env.TESSERACT_VERSION }}) with Leptonica (${{ env.LEPTONICA_VERSION }})
+          License:    Apache-2.0
+          URL:        https://github.com/tesseract-ocr/tesseract
+
+          Requires:   libicu
+          Requires:   libpng 
+          Requires:   libtiff 
+          Requires:   zlib 
+          Requires:   libwebp 
+          Requires:   libjpeg-turbo
+
+          %global install_prefix /usr/local
+
+          %description
+          Custom build of Tesseract OCR Engine version ${{ env.TESSERACT_VERSION }}
+          This package includes a custom build of Leptonica version ${{ env.LEPTONICA_VERSION }}.
+          Files are installed in %{install_prefix}.
+
+          %install
+          mkdir -p %{buildroot}%{install_prefix}/bin
+          mkdir -p %{buildroot}%{install_prefix}/lib/pkgconfig
+          mkdir -p %{buildroot}%{install_prefix}/lib
+          mkdir -p %{buildroot}%{install_prefix}/include/tesseract
+          mkdir -p %{buildroot}%{install_prefix}/include/leptonica
+          mkdir -p %{buildroot}%{install_prefix}/share/tessdata
+          mkdir -p %{buildroot}%{install_prefix}/share/man/man1
+
+          cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
+          
+          # Copy all library files and symlinks
+          cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
+          
+          cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          cp -a %{install_prefix}/lib/pkgconfig/leptonica.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          
+          # Copy contents of include directories
+          cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
+          cp -a %{install_prefix}/include/leptonica/* %{buildroot}%{install_prefix}/include/leptonica/
+          
+          if [ -d "%{install_prefix}/share/tessdata" ]; then
+            find %{install_prefix}/share/tessdata -maxdepth 1 -type f \( -name "*.configs" -o -name "*.config" -o -name "pdf.ttf" \) -exec cp -a {} %{buildroot}%{install_prefix}/share/tessdata/ \;
+            [ -f "%{install_prefix}/share/tessdata/osd.traineddata" ] && cp -a %{install_prefix}/share/tessdata/osd.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+            [ -f "%{install_prefix}/share/tessdata/eng.traineddata" ] && cp -a %{install_prefix}/share/tessdata/eng.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+          fi
+          
+          [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
+
+          %files
+          %{install_prefix}/bin/tesseract
+          %{install_prefix}/lib/*
+          %{install_prefix}/lib/pkgconfig/tesseract.pc
+          %{install_prefix}/lib/pkgconfig/leptonica.pc
+          %dir %{install_prefix}/include/tesseract
+          %{install_prefix}/include/tesseract/*
+          %dir %{install_prefix}/include/leptonica
+          %{install_prefix}/include/leptonica/*
+          %dir %{install_prefix}/share/tessdata
+          %{install_prefix}/share/tessdata/*
+          %dir %{install_prefix}/share/man/man1
+          %optional %{install_prefix}/share/man/man1/tesseract.1
+
+          %post -p /sbin/ldconfig
+          %postun -p /sbin/ldconfig
+
+          %changelog
+          * $(date +"%a %b %d %Y") GitHub Actions <actions@github.com> - ${{ env.TESSERACT_VERSION }}-1.leptonica${{ env.LEPTONICA_VERSION }}
+          - Automated build of Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} via GitHub Actions.
+          SPEC_EOF
+          echo "SPEC_FILE_PATH=${SPEC_FILE_PATH}" >> $GITHUB_OUTPUT
+
+      - name: Build RPM
+        run: |
+          rpmbuild -bb ${HOME}/rpmbuild/SPECS/${{ env.SPEC_FILENAME }} --define "_sourcedir /tmp" --define "_topdir ${HOME}/rpmbuild"
+          echo "RPMs created:"
+          find ${HOME}/rpmbuild/RPMS -name "*.rpm" -print
+
+      - name: Upload RPM as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tesseract-ocr-rpm
+          path: ~/rpmbuild/RPMS/**/*.rpm
+          if-no-files-found: error
+
+      - name: Upload Spec File as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tesseract-ocr-spec
+          path: ~/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}
+          if-no-files-found: error
+
+  publish_to_obs:
+    needs: build_and_package_tesseract
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Install OBS CLI (osc)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osc
+
+      - name: Download RPM artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tesseract-ocr-rpm
+          path: /tmp/tesseract-rpm-artifact
+
+      - name: Download Spec File artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tesseract-ocr-spec
+          path: /tmp/tesseract-spec-artifact
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded RPM artifact contents:"
+          ls -R /tmp/tesseract-rpm-artifact
+          echo "Downloaded Spec artifact contents:"
+          ls -R /tmp/tesseract-spec-artifact
+
+      - name: Configure OBS credentials
+        env:
+          OBS_TOKEN: ${{ secrets.OBS_TOKEN }}
+        run: |
+          echo "Configuring OBS access..."
+          if [ -z "$OBS_TOKEN" ]; then
+            echo "Error: OBS_TOKEN secret is not set. Cannot proceed with OBS publishing."
+            exit 1
+          fi
+          
+          mkdir -p ~/.config/osc
+          cat << 'OBS_CONFIG_EOF' > ~/.oscrc
+          [general]
+          apiurl = https://api.opensuse.org
+          
+          [https://api.opensuse.org]
+          user = chethanuk
+          pass = ${{ secrets.OBS_TOKEN }}
+          OBS_CONFIG_EOF
+          chmod 600 ~/.oscrc
+          echo "OBS credentials configured."
+
+      - name: Publish to OBS
+        env:
+          OBS_PROJECT: "home:chethanuk"
+          OBS_PACKAGE: "tesseract5"
+          SPEC_FILENAME_ENV: ${{ env.SPEC_FILENAME }}
+        run: |
+          echo "Publishing RPM to OBS project ${OBS_PROJECT}/${OBS_PACKAGE}"
+          cd /tmp
+          
+          # Check if package exists, create if not
+          if ! osc list "${OBS_PROJECT}" | grep -q "^${OBS_PACKAGE}$"; then
+            echo "Package ${OBS_PACKAGE} does not exist in project ${OBS_PROJECT}. Creating..."
+            osc mkpac "${OBS_PROJECT}" "${OBS_PACKAGE}"
+          fi
+          
+          osc checkout "${OBS_PROJECT}/${OBS_PACKAGE}"
+          
+          if [ ! -d "${OBS_PROJECT}/${OBS_PACKAGE}" ]; then
+            echo "Error: OBS checkout failed. Directory ${OBS_PROJECT}/${OBS_PACKAGE} not found."
+            exit 1
+          fi
+          cd "${OBS_PROJECT}/${OBS_PACKAGE}"
+          
+          # Remove old files
+          rm -f *.rpm
+          rm -f *.spec
+          
+          # Copy new RPM
+          RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact -name "*.rpm" -type f -print -quit)
+          if [ -z "$RPM_FILE_PATH" ]; then
+            echo "Error: RPM file not found in /tmp/tesseract-rpm-artifact."
+            exit 1
+          fi
+          cp "$RPM_FILE_PATH" .
+          echo "Copied RPM: $(basename "$RPM_FILE_PATH")"
+          
+          # Copy spec file
+          SPEC_FILE_PATH_ARTIFACT="/tmp/tesseract-spec-artifact/${SPEC_FILENAME_ENV}"
+          if [ ! -f "$SPEC_FILE_PATH_ARTIFACT" ]; then
+            echo "Error: Spec file $SPEC_FILE_PATH_ARTIFACT not found."
+            exit 1
+          fi
+          cp "$SPEC_FILE_PATH_ARTIFACT" .
+          echo "Copied spec file: $(basename "$SPEC_FILE_PATH_ARTIFACT")"
+          
+          # Add new files to OBS
+          echo "Adding new files to OBS..."
+          osc addremove
+          
+          # Check status
+          echo "OBS status:"
+          osc status
+          
+          # Commit changes
+          if osc status | grep -q 'nothing to commit'; then
+            echo "OBS: No changes to commit."
+          else
+            osc commit -m "Update Tesseract OCR to ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} from GitHub Actions"
+            echo "OBS commit successful."
+          fi
+
+  publish_to_github_release:
+    needs: build_and_package_tesseract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download RPM artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tesseract-ocr-rpm
+          path: /tmp/tesseract-rpm-artifact
+
+      - name: Download Spec File artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tesseract-ocr-spec
+          path: /tmp/tesseract-spec-artifact
+
+      - name: List downloaded artifacts for release
+        run: |
+          echo "RPM artifact contents for release:"
+          ls -R /tmp/tesseract-rpm-artifact
+          echo "Spec artifact contents for release:"
+          ls -R /tmp/tesseract-spec-artifact
+
+      - name: Create GitHub Release and Upload Assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: v${{ env.TESSERACT_VERSION }}-leptonica${{ env.LEPTONICA_VERSION }}
+        run: |
+          RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact -name "*.rpm" -type f -print -quit)
+          if [ -z "$RPM_FILE_PATH" ]; then
+            echo "Error: RPM file not found in /tmp/tesseract-rpm-artifact."
+            exit 1
+          fi
+          SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact -name "*.spec" -type f -print -quit)
+          if [ -z "$SPEC_FILE_PATH" ]; then
+            echo "Error: Spec file not found in /tmp/tesseract-spec-artifact."
+            exit 1
+          fi
+          
+          # Create release notes file
+          cat << 'RELEASE_NOTES_EOF' > release_notes.md
+          Automated release of Tesseract OCR ${{ env.TESSERACT_VERSION }} (custom build with Leptonica ${{ env.LEPTONICA_VERSION }}). 
+
+          ## What's included:
+          - CentOS 8 Stream RPM package
+          - RPM spec file
+
+          ## Installation:
+          ```bash
+          # Install the RPM
+          sudo rpm -i tesseract-ocr-custom-*.rpm
+
+          # Verify installation
+          tesseract --version
+          ```
+
+          ## Features:
+          - Built with Leptonica ${{ env.LEPTONICA_VERSION }}
+          - Includes support for multiple image formats (PNG, TIFF, JPEG, WebP)
+          - Full Unicode support via libicu
+          - Optimized for performance with parallel processing
+
+          ## Build Configuration:
+          - Compiler: GCC 11+
+          - Build type: Release with optimizations
+          - Install prefix: /usr/local
+
+          This package is also available on OpenSUSE Build Service:
+          https://build.opensuse.org/package/show/home:chethanuk/tesseract5
+          RELEASE_NOTES_EOF
+          
+          # Create release
+          echo "Creating release $TAG_NAME and uploading assets..."
+          gh release create "$TAG_NAME" \
+            --title "Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }}" \
+            --notes-file release_notes.md \
+            "${RPM_FILE_PATH}" \
+            "${SPEC_FILE_PATH}"
+          
+          echo "GitHub Release created and assets uploaded."

@@ -115,3 +115,10 @@ times.txt
 
 /*.snap
 /*_source.tar.bz2
+
+# Ignore Leptonica source and build files
+leptonica-1.82.0/
+1.82.0.tar.gz
+
+# Ignore Tesseract build directory
+tesseract_build_dir/
