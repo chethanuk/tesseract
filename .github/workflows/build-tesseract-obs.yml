@@ -190,212 +190,6 @@ jobs:
           path: ~/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}
           if-no-files-found: error
 
-  build_for_amazon_linux:
-    runs-on: ubuntu-latest
-    container:
-      image: amazonlinux:2
-      options: --privileged
-
-    steps:
-      # Manual checkout since actions/checkout@v4 requires newer glibc than Amazon Linux 2 provides
-      - name: Install git
-        run: |
-          yum -y install git
-
-      - name: Configure git safe directory
-        run: |
-          git config --global --add safe.directory /__w/tesseract/tesseract
-
-      - name: Manual checkout
-        run: |
-          git clone https://github.com/${{ github.repository }}.git .
-          git fetch origin ${{ github.sha }}
-          git checkout ${{ github.sha }}
-
-      - name: Update yum and install basic dependencies
-        run: |
-          yum -y update
-          yum -y install amazon-linux-extras
-          amazon-linux-extras enable epel
-          yum -y install epel-release
-          yum -y groupinstall 'Development Tools'
-          yum -y install \
-            automake \
-            autoconf \
-            libtool \
-            pkg-config \
-            wget \
-            cmake \
-            gcc-c++ \
-            libpng-devel \
-            libtiff-devel \
-            zlib-devel \
-            libjpeg-turbo-devel \
-            libicu-devel \
-            pango-devel \
-            cairo-devel \
-            rpm-build \
-            autoconf-archive \
-            patch
-
-      - name: Install libwebp from source (not available in AL2 repos)
-        run: |
-          cd /tmp
-          wget https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.2.4.tar.gz
-          tar -xzf libwebp-1.2.4.tar.gz
-          cd libwebp-1.2.4
-          ./configure --prefix=/usr/local
-          make -j$(nproc)
-          make install
-          ldconfig
-
-      - name: Build Leptonica
-        run: |
-          echo "Building Leptonica ${{ env.LEPTONICA_VERSION }}"
-          cd /tmp
-          wget -O leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz https://github.com/DanBloomberg/leptonica/archive/refs/tags/${{ env.LEPTONICA_VERSION }}.tar.gz
-          tar -xzf leptonica-${{ env.LEPTONICA_VERSION }}.tar.gz
-          cd leptonica-${{ env.LEPTONICA_VERSION }}
-          ./autogen.sh
-          ./configure --prefix=/usr/local
-          make -j$(nproc)
-          make install
-          ldconfig
-
-      - name: Build Tesseract OCR
-        run: |
-          echo "Building Tesseract OCR ${{ env.TESSERACT_VERSION }}"
-          cd /tmp
-          git clone https://github.com/tesseract-ocr/tesseract.git tesseract-ocr
-          cd tesseract-ocr
-          git checkout ${{ env.TESSERACT_VERSION }}
-          ./autogen.sh
-          export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
-          ./configure --prefix=/usr/local
-          make -j$(nproc)
-          make install
-          ldconfig
-          tesseract --version
-
-      - name: Prepare RPM build environment and Spec File for AL2
-        id: prepare_rpm_spec_al2
-        run: |
-          echo "Creating RPM build directories and AL2 spec file"
-          mkdir -p ${HOME}/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
-          SPEC_FILE_PATH="${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec"
-          
-          # Generate changelog date in the correct format
-          CHANGELOG_DATE=$(date +"%a %b %d %Y")
-
-          cat << SPEC_EOF > "${SPEC_FILE_PATH}"
-          Name:       tesseract-ocr-custom
-          Version:    ${{ env.TESSERACT_VERSION }}
-          Release:    1.amzn2.leptonica${{ env.LEPTONICA_VERSION }}
-          Summary:    Tesseract OCR Engine (${{ env.TESSERACT_VERSION }}) with Leptonica (${{ env.LEPTONICA_VERSION }})
-          License:    Apache-2.0
-          URL:        https://github.com/tesseract-ocr/tesseract
-
-          Requires:   libicu
-          Requires:   libpng 
-          Requires:   libtiff 
-          Requires:   zlib 
-          Requires:   libjpeg-turbo
-
-          %global install_prefix /usr/local
-
-          %description
-          Custom build of Tesseract OCR Engine version ${{ env.TESSERACT_VERSION }}
-          This package includes a custom build of Leptonica version ${{ env.LEPTONICA_VERSION }}.
-          Files are installed in %{install_prefix}.
-          Built on Amazon Linux 2 for maximum compatibility.
-
-          %install
-          mkdir -p %{buildroot}%{install_prefix}/bin
-          mkdir -p %{buildroot}%{install_prefix}/lib/pkgconfig
-          mkdir -p %{buildroot}%{install_prefix}/lib
-          mkdir -p %{buildroot}%{install_prefix}/include/tesseract
-          mkdir -p %{buildroot}%{install_prefix}/include/leptonica
-          mkdir -p %{buildroot}%{install_prefix}/share/tessdata
-          mkdir -p %{buildroot}%{install_prefix}/share/man/man1
-
-          cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
-          
-          # Copy all library files and symlinks
-          cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
-          
-          cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
-          cp -a %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
-          
-          # Copy contents of include directories
-          cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
-          cp -a %{install_prefix}/include/leptonica/* %{buildroot}%{install_prefix}/include/leptonica/
-          
-          if [ -d "%{install_prefix}/share/tessdata" ]; then
-            find %{install_prefix}/share/tessdata -maxdepth 1 -type f \( -name "*.configs" -o -name "*.config" -o -name "pdf.ttf" \) -exec cp -a {} %{buildroot}%{install_prefix}/share/tessdata/ \;
-            [ -f "%{install_prefix}/share/tessdata/osd.traineddata" ] && cp -a %{install_prefix}/share/tessdata/osd.traineddata %{buildroot}%{install_prefix}/share/tessdata/
-            [ -f "%{install_prefix}/share/tessdata/eng.traineddata" ] && cp -a %{install_prefix}/share/tessdata/eng.traineddata %{buildroot}%{install_prefix}/share/tessdata/
-          fi
-          
-          [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
-          # Ensure man page exists for RPM packaging (create empty file if missing)
-          if [ ! -f "%{buildroot}%{install_prefix}/share/man/man1/tesseract.1" ]; then
-            touch %{buildroot}%{install_prefix}/share/man/man1/tesseract.1
-          fi
-
-          %files
-          %{install_prefix}/bin/tesseract
-          %{install_prefix}/lib/*
-          %{install_prefix}/lib/pkgconfig/tesseract.pc
-          %{install_prefix}/lib/pkgconfig/lept.pc
-          %dir %{install_prefix}/include/tesseract
-          %{install_prefix}/include/tesseract/*
-          %dir %{install_prefix}/include/leptonica
-          %{install_prefix}/include/leptonica/*
-          %dir %{install_prefix}/share/tessdata
-          %{install_prefix}/share/tessdata/*
-          %dir %{install_prefix}/share/man/man1
-          %{install_prefix}/share/man/man1/tesseract.1
-
-          %post -p /sbin/ldconfig
-          %postun -p /sbin/ldconfig
-
-          %changelog
-          * ${CHANGELOG_DATE} GitHub Actions <actions@github.com> - ${{ env.TESSERACT_VERSION }}-1.amzn2.leptonica${{ env.LEPTONICA_VERSION }}
-          - Automated build of Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }} via GitHub Actions on Amazon Linux 2.
-          SPEC_EOF
-          echo "SPEC_FILE_PATH=${SPEC_FILE_PATH}" >> $GITHUB_OUTPUT
-
-      - name: Build RPM for Amazon Linux 2
-        run: |
-          rpmbuild -bb ${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec --define "_sourcedir /tmp" --define "_topdir ${HOME}/rpmbuild"
-          echo "Amazon Linux 2 RPMs created:"
-          find ${HOME}/rpmbuild/RPMS -name "*.rpm" -print
-
-      - name: Copy Amazon Linux 2 artifacts to workspace
-        run: |
-          # The workspace is mounted at /__w/tesseract/tesseract
-          mkdir -p /__w/tesseract/tesseract/amazon-linux-artifacts/rpm
-          mkdir -p /__w/tesseract/tesseract/amazon-linux-artifacts/spec
-          cp ${HOME}/rpmbuild/RPMS/*/*.rpm /__w/tesseract/tesseract/amazon-linux-artifacts/rpm/
-          cp ${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec /__w/tesseract/tesseract/amazon-linux-artifacts/spec/
-          echo "Artifacts copied to workspace"
-          ls -la /__w/tesseract/tesseract/amazon-linux-artifacts/rpm/
-          ls -la /__w/tesseract/tesseract/amazon-linux-artifacts/spec/
-
-      - name: Upload Amazon Linux 2 RPM as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tesseract-ocr-rpm-al2
-          path: amazon-linux-artifacts/rpm/*.rpm
-          if-no-files-found: error
-
-      - name: Upload Amazon Linux 2 Spec File as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tesseract-ocr-spec-al2
-          path: amazon-linux-artifacts/spec/tesseract-ocr-al2.spec
-          if-no-files-found: error
-
   build_for_amazon_linux_2023:
     runs-on: ubuntu-latest
     container:
@@ -574,7 +368,7 @@ jobs:
           if-no-files-found: error
 
   publish_to_obs:
-    needs: [build_and_package_tesseract, build_for_amazon_linux, build_for_amazon_linux_2023]
+    needs: [build_and_package_tesseract, build_for_amazon_linux_2023]
     runs-on: ubuntu-latest
     
     steps:
@@ -595,18 +389,6 @@ jobs:
           name: tesseract-ocr-spec-rhel8
           path: /tmp/tesseract-spec-artifact-rhel8
 
-      - name: Download Amazon Linux 2 RPM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tesseract-ocr-rpm-al2
-          path: /tmp/tesseract-rpm-artifact-al2
-
-      - name: Download Amazon Linux 2 spec file artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tesseract-ocr-spec-al2
-          path: /tmp/tesseract-spec-artifact-al2
-
       - name: Download Amazon Linux 2023 RPM artifact
         uses: actions/download-artifact@v4
         with:
@@ -625,10 +407,6 @@ jobs:
           ls -R /tmp/tesseract-rpm-artifact
           echo "Spec artifact contents for RHEL8:"
           ls -R /tmp/tesseract-spec-artifact-rhel8
-          echo "Amazon Linux 2 RPM artifact contents:"
-          ls -R /tmp/tesseract-rpm-artifact-al2
-          echo "Amazon Linux 2 Spec artifact contents:"
-          ls -R /tmp/tesseract-spec-artifact-al2
           echo "Amazon Linux 2023 RPM artifact contents:"
           ls -R /tmp/tesseract-rpm-artifact-al2023
           echo "Amazon Linux 2023 Spec artifact contents:"
@@ -695,18 +473,6 @@ jobs:
             exit 1
           fi
           
-          # Find Amazon Linux 2 files
-          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2 -name "*.rpm" -type f -print -quit)
-          if [ -z "$AL2_RPM_FILE_PATH" ]; then
-            echo "Error: Amazon Linux 2 RPM file not found."
-            exit 1
-          fi
-          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-al2 -name "*.spec" -type f -print -quit)
-          if [ -z "$AL2_SPEC_FILE_PATH" ]; then
-            echo "Error: Amazon Linux 2 Spec file not found."
-            exit 1
-          fi
-          
           # Find Amazon Linux 2023 files
           AL2023_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2023 -name "*.rpm" -type f -print -quit)
           if [ -z "$AL2023_RPM_FILE_PATH" ]; then
@@ -726,14 +492,6 @@ jobs:
           # Copy spec file
           cp "$SPEC_FILE_PATH" .
           echo "Copied spec file: $(basename "$SPEC_FILE_PATH")"
-          
-          # Copy Amazon Linux 2 RPM
-          cp "$AL2_RPM_FILE_PATH" .
-          echo "Copied Amazon Linux 2 RPM: $(basename "$AL2_RPM_FILE_PATH")"
-          
-          # Copy Amazon Linux 2 spec file
-          cp "$AL2_SPEC_FILE_PATH" .
-          echo "Copied Amazon Linux 2 spec file: $(basename "$AL2_SPEC_FILE_PATH")"
           
           # Copy Amazon Linux 2023 RPM
           cp "$AL2023_RPM_FILE_PATH" .
@@ -760,7 +518,7 @@ jobs:
           fi
 
   publish_to_github_release:
-    needs: [build_and_package_tesseract, build_for_amazon_linux, build_for_amazon_linux_2023]
+    needs: [build_and_package_tesseract, build_for_amazon_linux_2023]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -781,18 +539,6 @@ jobs:
           name: tesseract-ocr-spec-rhel8
           path: /tmp/tesseract-spec-artifact-rhel8
 
-      - name: Download Amazon Linux 2 RPM artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tesseract-ocr-rpm-al2
-          path: /tmp/tesseract-rpm-artifact-al2
-
-      - name: Download Amazon Linux 2 Spec File artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tesseract-ocr-spec-al2
-          path: /tmp/tesseract-spec-artifact-al2
-
       - name: Download Amazon Linux 2023 RPM artifact
         uses: actions/download-artifact@v4
         with:
@@ -811,10 +557,6 @@ jobs:
           ls -R /tmp/tesseract-rpm-artifact
           echo "Spec artifact contents for release:"
           ls -R /tmp/tesseract-spec-artifact-rhel8
-          echo "Amazon Linux 2 RPM artifact contents:"
-          ls -R /tmp/tesseract-rpm-artifact-al2
-          echo "Amazon Linux 2 Spec artifact contents:"
-          ls -R /tmp/tesseract-spec-artifact-al2
           echo "Amazon Linux 2023 RPM artifact contents:"
           ls -R /tmp/tesseract-rpm-artifact-al2023
           echo "Amazon Linux 2023 Spec artifact contents:"
@@ -837,18 +579,6 @@ jobs:
             exit 1
           fi
           
-          # Find Amazon Linux 2 files
-          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2 -name "*.rpm" -type f -print -quit)
-          if [ -z "$AL2_RPM_FILE_PATH" ]; then
-            echo "Error: Amazon Linux 2 RPM file not found."
-            exit 1
-          fi
-          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-al2 -name "*.spec" -type f -print -quit)
-          if [ -z "$AL2_SPEC_FILE_PATH" ]; then
-            echo "Error: Amazon Linux 2 Spec file not found."
-            exit 1
-          fi
-          
           # Find Amazon Linux 2023 files
           AL2023_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2023 -name "*.rpm" -type f -print -quit)
           if [ -z "$AL2023_RPM_FILE_PATH" ]; then
@@ -867,20 +597,14 @@ jobs:
 
           ## What's included:
           - AlmaLinux 8 RPM package (RHEL 8 compatible)
-          - Amazon Linux 2 RPM package
           - Amazon Linux 2023 RPM package
-          - RPM spec files for all three builds
+          - RPM spec files for both builds
 
           ## Installation:
           
           ### For RHEL 8 / AlmaLinux 8 / Rocky Linux 8:
           ```bash
           sudo rpm -i tesseract-ocr-custom-*el8*.rpm
-          ```
-          
-          ### For Amazon Linux 2:
-          ```bash
-          sudo rpm -i tesseract-ocr-custom-*amzn2*.rpm
           ```
           
           ### For Amazon Linux 2023:
@@ -901,7 +625,6 @@ jobs:
 
           ## Build Configuration:
           - RHEL 8 compatible build: AlmaLinux 8 (GCC 8+)
-          - Amazon Linux 2 build: Amazon Linux 2 (GCC 7+)
           - Amazon Linux 2023 build: Amazon Linux 2023 (GCC 11+)
           - Build type: Release with optimizations
           - Install prefix: /usr/local
@@ -917,8 +640,6 @@ jobs:
             --notes-file release_notes.md \
             "${RPM_FILE_PATH}" \
             "${SPEC_FILE_PATH}" \
-            "${AL2_RPM_FILE_PATH}" \
-            "${AL2_SPEC_FILE_PATH}" \
             "${AL2023_RPM_FILE_PATH}" \
             "${AL2023_SPEC_FILE_PATH}"
           
