@@ -101,6 +101,11 @@ ldconfig
 %{install_prefix}/bin/tesseract
 %{install_prefix}/lib/libtesseract.so*
 %{install_prefix}/lib/libleptonica.so*
+%{install_prefix}/lib/libtesseract.a
+%{install_prefix}/lib/libleptonica.a
+%{install_prefix}/lib/libtesseract.la
+%{install_prefix}/lib/libleptonica.la
+%{install_prefix}/lib/cmake/
 %{install_prefix}/lib/pkgconfig/tesseract.pc
 %{install_prefix}/lib/pkgconfig/lept.pc
 %{install_prefix}/include/tesseract/
