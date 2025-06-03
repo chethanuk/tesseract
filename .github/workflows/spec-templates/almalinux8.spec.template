@@ -1,0 +1,105 @@
+%define _signature gpg
+%define _gpg_name Tesseract OCR Build Bot
+
+Name: tesseract-ocr
+Version: ${TESSERACT_VERSION}
+Release: 1.el8.leptonica${LEPTONICA_VERSION}
+Summary: Tesseract OCR engine
+License: Apache-2.0
+URL: https://github.com/tesseract-ocr/tesseract
+Source0: tesseract-${TESSERACT_VERSION}.tar.gz
+Source1: leptonica-${LEPTONICA_VERSION}.tar.gz
+
+BuildRequires: gcc-c++
+BuildRequires: cmake
+BuildRequires: libtool
+BuildRequires: autoconf
+BuildRequires: automake
+BuildRequires: libjpeg-devel
+BuildRequires: libpng-devel
+BuildRequires: libtiff-devel
+BuildRequires: zlib-devel
+BuildRequires: libwebp-devel
+BuildRequires: giflib-devel
+BuildRequires: openjpeg2-devel
+BuildRequires: libcurl-devel
+BuildRequires: libarchive-devel
+BuildRequires: git
+
+Requires: libjpeg
+Requires: libpng
+Requires: libtiff
+Requires: zlib
+Requires: libwebp
+Requires: giflib
+Requires: openjpeg2-libs
+Requires: libcurl
+Requires: libarchive
+
+%define install_prefix /usr/local
+
+%description
+Tesseract is an OCR engine with support for many languages.
+This package includes both Tesseract ${TESSERACT_VERSION} and Leptonica ${LEPTONICA_VERSION}.
+
+%prep
+# Files are already extracted and built
+
+%build
+# Already built in previous steps
+
+%install
+mkdir -p %{buildroot}%{install_prefix}/bin
+mkdir -p %{buildroot}%{install_prefix}/lib
+mkdir -p %{buildroot}%{install_prefix}/lib/pkgconfig
+mkdir -p %{buildroot}%{install_prefix}/include/tesseract
+mkdir -p %{buildroot}%{install_prefix}/include/leptonica
+mkdir -p %{buildroot}%{install_prefix}/share/tessdata
+mkdir -p %{buildroot}%{install_prefix}/share/man/man1
+
+cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
+
+cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
+
+cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+cp -a %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+
+cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
+cp -a %{install_prefix}/include/leptonica/* %{buildroot}%{install_prefix}/include/leptonica/
+
+if [ -d "%{install_prefix}/share/tessdata" ]; then
+  find %{install_prefix}/share/tessdata -maxdepth 1 -type f \( -name "*.configs" -o -name "*.config" -o -name "pdf.ttf" \) -exec cp -a {} %{buildroot}%{install_prefix}/share/tessdata/ \;
+  [ -f "%{install_prefix}/share/tessdata/osd.traineddata" ] && cp -a %{install_prefix}/share/tessdata/osd.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+  [ -f "%{install_prefix}/share/tessdata/eng.traineddata" ] && cp -a %{install_prefix}/share/tessdata/eng.traineddata %{buildroot}%{install_prefix}/share/tessdata/
+fi
+
+[ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
+
+if [ ! -f "%{buildroot}%{install_prefix}/share/man/man1/tesseract.1" ]; then
+  touch %{buildroot}%{install_prefix}/share/man/man1/tesseract.1
+fi
+
+%post
+echo "%{install_prefix}/lib" > /etc/ld.so.conf.d/tesseract.conf
+ldconfig
+
+%postun
+rm -f /etc/ld.so.conf.d/tesseract.conf
+ldconfig
+
+%files
+%{install_prefix}/bin/tesseract
+%{install_prefix}/lib/libtesseract.so*
+%{install_prefix}/lib/libleptonica.so*
+%{install_prefix}/lib/liblept.so*
+%{install_prefix}/lib/pkgconfig/tesseract.pc
+%{install_prefix}/lib/pkgconfig/lept.pc
+%{install_prefix}/include/tesseract/
+%{install_prefix}/include/leptonica/
+%{install_prefix}/share/tessdata/
+%{install_prefix}/share/man/man1/tesseract.1
+
+%changelog
+* ${DATE} Tesseract OCR Build Bot <tesseract-build@github.com> - ${TESSERACT_VERSION}-1.el8.leptonica${LEPTONICA_VERSION}
+- Automated build of Tesseract ${TESSERACT_VERSION} with Leptonica ${LEPTONICA_VERSION}
+- Built for AlmaLinux 8
