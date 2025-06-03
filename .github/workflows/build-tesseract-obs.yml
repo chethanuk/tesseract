@@ -1,4 +1,4 @@
-name: Build Tesseract OCR RPM and Publish to OBS
+name: Tesseract OCR Multi-Version Build Workflow
 
 on:
   push:
@@ -7,7 +7,29 @@ on:
       - feat/obs-publish-workflow
     paths:
       - '.github/workflows/build-tesseract-obs.yml'
+      - 'spec-templates/**'
   workflow_dispatch:
+    inputs:
+      tesseract_versions:
+        description: 'Tesseract versions to build (comma-separated, e.g., "5.3.1,5.3.4" or "all" for all versions)'
+        required: false
+        default: 'all'
+        type: string
+      leptonica_versions:
+        description: 'Leptonica versions to build (comma-separated, e.g., "1.82.0,1.85.0" or "all" for all versions)'
+        required: false
+        default: 'all'
+        type: string
+      skip_obs_publish:
+        description: 'Skip publishing to OBS'
+        required: false
+        default: false
+        type: boolean
+      skip_github_release:
+        description: 'Skip creating GitHub release'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   setup_gpg_key:
@@ -299,6 +321,7 @@ jobs:
   publish_to_obs:
     needs: [build_and_package_tesseract, build_for_amazon_linux_2023]
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || !github.event.inputs.skip_obs_publish }}
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -479,6 +502,7 @@ jobs:
   publish_to_github_release:
     needs: [build_and_package_tesseract, build_for_amazon_linux_2023]
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || !github.event.inputs.skip_github_release }}
     strategy:
       fail-fast: false
       max-parallel: 2
