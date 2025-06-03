@@ -421,11 +421,11 @@ jobs:
 
       - name: Configure OBS credentials
         env:
-          OBS_TOKEN: ${{ secrets.OBS_TOKEN }}
+          OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
         run: |
           echo "Configuring OBS access..."
-          if [ -z "$OBS_TOKEN" ]; then
-            echo "Error: OBS_TOKEN secret is not set. Cannot proceed with OBS publishing."
+          if [ -z "$OBS_PASSWORD" ]; then
+            echo "Error: OBS_PASSWORD secret is not set. Cannot proceed with OBS publishing."
             exit 1
           fi
           
@@ -437,7 +437,7 @@ jobs:
           
           [https://api.opensuse.org]
           user = chethanuk
-          pass = ${{ secrets.OBS_TOKEN }}
+          pass = ${{ secrets.OBS_PASSWORD }}
           OBS_CONFIG_EOF
           chmod 600 ~/.config/osc/oscrc
           echo "OBS credentials configured."
@@ -454,7 +454,7 @@ jobs:
           # Test authentication first
           echo "Testing OBS authentication..."
           if ! osc ls "${OBS_PROJECT}" > /dev/null 2>&1; then
-            echo "Error: Authentication failed. Please check OBS_TOKEN secret."
+            echo "Error: Authentication failed. Please check OBS_PASSWORD secret."
             exit 1
           fi
           echo "Authentication successful."
