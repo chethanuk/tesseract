@@ -155,7 +155,7 @@ jobs:
           %dir %{install_prefix}/share/tessdata
           %{install_prefix}/share/tessdata/*
           %dir %{install_prefix}/share/man/man1
-          %optional %{install_prefix}/share/man/man1/tesseract.1
+          %{install_prefix}/share/man/man1/tesseract.1
 
           %post -p /sbin/ldconfig
           %postun -p /sbin/ldconfig
@@ -346,7 +346,7 @@ jobs:
           %dir %{install_prefix}/share/tessdata
           %{install_prefix}/share/tessdata/*
           %dir %{install_prefix}/share/man/man1
-          %optional %{install_prefix}/share/man/man1/tesseract.1
+          %{install_prefix}/share/man/man1/tesseract.1
 
           %post -p /sbin/ldconfig
           %postun -p /sbin/ldconfig
