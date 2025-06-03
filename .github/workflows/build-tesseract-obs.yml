@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  LEPTONICA_VERSION: "1.82.0"
+  LEPTONICA_VERSION: "1.85.0"
   TESSERACT_VERSION: "5.3.1"
   SPEC_FILENAME: "tesseract-ocr-custom.spec"
 
@@ -429,8 +429,9 @@ jobs:
             exit 1
           fi
           
+          # Create oscrc in the correct location
           mkdir -p ~/.config/osc
-          cat << 'OBS_CONFIG_EOF' > ~/.oscrc
+          cat << 'OBS_CONFIG_EOF' > ~/.config/osc/oscrc
           [general]
           apiurl = https://api.opensuse.org
           
@@ -438,7 +439,7 @@ jobs:
           user = chethanuk
           pass = ${{ secrets.OBS_TOKEN }}
           OBS_CONFIG_EOF
-          chmod 600 ~/.oscrc
+          chmod 600 ~/.config/osc/oscrc
           echo "OBS credentials configured."
 
       - name: Publish to OBS
@@ -450,10 +451,26 @@ jobs:
           echo "Publishing RPM to OBS project ${OBS_PROJECT}/${OBS_PACKAGE}"
           cd /tmp
           
+          # Test authentication first
+          echo "Testing OBS authentication..."
+          if ! osc ls "${OBS_PROJECT}" > /dev/null 2>&1; then
+            echo "Error: Authentication failed. Please check OBS_TOKEN secret."
+            exit 1
+          fi
+          echo "Authentication successful."
+          
           # Check if package exists, create if not
-          if ! osc list "${OBS_PROJECT}" | grep -q "^${OBS_PACKAGE}$"; then
+          if ! osc ls "${OBS_PROJECT}" | grep -q "^${OBS_PACKAGE}$"; then
             echo "Package ${OBS_PACKAGE} does not exist in project ${OBS_PROJECT}. Creating..."
-            osc mkpac "${OBS_PROJECT}" "${OBS_PACKAGE}"
+            # Create package with description
+            osc meta pkg "${OBS_PROJECT}" "${OBS_PACKAGE}" -F - << 'PKG_META_EOF'
+          <package name="tesseract5" project="home:chethanuk">
+            <title>Tesseract OCR 5</title>
+            <description>Custom build of Tesseract OCR Engine with Leptonica</description>
+          </package>
+          PKG_META_EOF
+          else
+            echo "Package ${OBS_PACKAGE} already exists in project ${OBS_PROJECT}."
           fi
           
           osc checkout "${OBS_PROJECT}/${OBS_PACKAGE}"
@@ -569,7 +586,7 @@ jobs:
           echo "Amazon Linux 2023 Spec artifact contents:"
           ls -R /tmp/tesseract-spec-artifact-al2023
 
-      - name: Create GitHub Release and Upload Assets
+      - name: Create or Update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: v${{ env.TESSERACT_VERSION }}-leptonica${{ env.LEPTONICA_VERSION }}
@@ -640,14 +657,45 @@ jobs:
           https://build.opensuse.org/package/show/home:chethanuk/tesseract5
           RELEASE_NOTES_EOF
           
-          # Create release
-          echo "Creating release $TAG_NAME and uploading assets..."
-          gh release create "$TAG_NAME" \
-            --title "Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }}" \
-            --notes-file release_notes.md \
-            "${RPM_FILE_PATH}" \
-            "${SPEC_FILE_PATH}" \
-            "${AL2023_RPM_FILE_PATH}" \
-            "${AL2023_SPEC_FILE_PATH}"
-          
-          echo "GitHub Release created and assets uploaded."
+          # Check if release exists
+          echo "Checking if release $TAG_NAME exists..."
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists. Updating assets..."
+            
+            # Delete existing assets with the same names to avoid conflicts
+            echo "Removing old assets if they exist..."
+            for asset in "$(basename "$RPM_FILE_PATH")" "$(basename "$SPEC_FILE_PATH")" "$(basename "$AL2023_RPM_FILE_PATH")" "$(basename "$AL2023_SPEC_FILE_PATH")"; do
+              if gh release view "$TAG_NAME" --json assets -q ".assets[] | select(.name == \"$asset\") | .name" | grep -q "$asset"; then
+                echo "Deleting existing asset: $asset"
+                gh release delete-asset "$TAG_NAME" "$asset" -y
+              fi
+            done
+            
+            # Upload new assets to existing release
+            echo "Uploading new assets to existing release..."
+            gh release upload "$TAG_NAME" \
+              "${RPM_FILE_PATH}" \
+              "${SPEC_FILE_PATH}" \
+              "${AL2023_RPM_FILE_PATH}" \
+              "${AL2023_SPEC_FILE_PATH}" \
+              --clobber
+            
+            # Update release notes
+            echo "Updating release notes..."
+            gh release edit "$TAG_NAME" \
+              --notes-file release_notes.md
+            
+            echo "GitHub Release updated with new assets."
+          else
+            # Create new release
+            echo "Creating new release $TAG_NAME..."
+            gh release create "$TAG_NAME" \
+              --title "Tesseract OCR ${{ env.TESSERACT_VERSION }} with Leptonica ${{ env.LEPTONICA_VERSION }}" \
+              --notes-file release_notes.md \
+              "${RPM_FILE_PATH}" \
+              "${SPEC_FILE_PATH}" \
+              "${AL2023_RPM_FILE_PATH}" \
+              "${AL2023_SPEC_FILE_PATH}"
+            
+            echo "GitHub Release created and assets uploaded."
+          fi
