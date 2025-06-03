@@ -56,7 +56,6 @@ mkdir -p %{buildroot}%{install_prefix}/include
 mkdir -p %{buildroot}%{install_prefix}/share/tessdata
 mkdir -p %{buildroot}%{install_prefix}/share/man/man1
 
-
 # Copy binaries
 cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
 
