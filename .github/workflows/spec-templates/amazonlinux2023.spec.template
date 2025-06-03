@@ -53,45 +53,54 @@ mkdir -p %{buildroot}%{install_prefix}/bin
 mkdir -p %{buildroot}%{install_prefix}/lib64
 mkdir -p %{buildroot}%{install_prefix}/lib
 mkdir -p %{buildroot}%{install_prefix}/lib64/pkgconfig
-mkdir -p %{buildroot}%{install_prefix}/include/tesseract
-mkdir -p %{buildroot}%{install_prefix}/include/leptonica
+mkdir -p %{buildroot}%{install_prefix}/include
 mkdir -p %{buildroot}%{install_prefix}/share/tessdata
 mkdir -p %{buildroot}%{install_prefix}/share/man/man1
 
+# Copy binaries
 cp -a %{install_prefix}/bin/tesseract %{buildroot}%{install_prefix}/bin/
 
 # Handle both lib and lib64 for Amazon Linux 2023
 if [ -d "%{install_prefix}/lib64" ] && [ "$(ls -A %{install_prefix}/lib64)" ]; then
-  cp -a %{install_prefix}/lib64/* %{buildroot}%{install_prefix}/lib64/
+  (cd %{install_prefix}/lib64 && tar cf - .) | (cd %{buildroot}%{install_prefix}/lib64 && tar xf -)
   # Create compatibility symlinks in lib
+  mkdir -p %{buildroot}%{install_prefix}/lib
   ln -sf ../lib64/libtesseract.so* %{buildroot}%{install_prefix}/lib/
   ln -sf ../lib64/libleptonica.so* %{buildroot}%{install_prefix}/lib/
-  ln -sf ../lib64/liblept.so* %{buildroot}%{install_prefix}/lib/
+  # Note: liblept.so* doesn't exist, only libleptonica.so*
 else
-  cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
+  (cd %{install_prefix}/lib && tar cf - .) | (cd %{buildroot}%{install_prefix}/lib && tar xf -)
 fi
 
 # Handle pkgconfig files
 if [ -f "%{install_prefix}/lib64/pkgconfig/tesseract.pc" ]; then
-  cp -a %{install_prefix}/lib64/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib64/pkgconfig/
-  cp -a %{install_prefix}/lib64/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib64/pkgconfig/
+  cp -f %{install_prefix}/lib64/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib64/pkgconfig/ || true
+  cp -f %{install_prefix}/lib64/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib64/pkgconfig/ || true
 else
   mkdir -p %{buildroot}%{install_prefix}/lib/pkgconfig
-  cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
-  cp -a %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+  cp -f %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/ || true
+  cp -f %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/ || true
 fi
 
-cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
-cp -a %{install_prefix}/include/leptonica/* %{buildroot}%{install_prefix}/include/leptonica/
+# Copy include directories using tar to avoid command line length issues
+if [ -d "%{install_prefix}/include/tesseract" ]; then
+  (cd %{install_prefix}/include && tar cf - tesseract) | (cd %{buildroot}%{install_prefix}/include && tar xf -)
+fi
+if [ -d "%{install_prefix}/include/leptonica" ]; then
+  (cd %{install_prefix}/include && tar cf - leptonica) | (cd %{buildroot}%{install_prefix}/include && tar xf -)
+fi
 
+# Copy tessdata files
 if [ -d "%{install_prefix}/share/tessdata" ]; then
   find %{install_prefix}/share/tessdata -maxdepth 1 -type f \( -name "*.configs" -o -name "*.config" -o -name "pdf.ttf" \) -exec cp -a {} %{buildroot}%{install_prefix}/share/tessdata/ \;
   [ -f "%{install_prefix}/share/tessdata/osd.traineddata" ] && cp -a %{install_prefix}/share/tessdata/osd.traineddata %{buildroot}%{install_prefix}/share/tessdata/
   [ -f "%{install_prefix}/share/tessdata/eng.traineddata" ] && cp -a %{install_prefix}/share/tessdata/eng.traineddata %{buildroot}%{install_prefix}/share/tessdata/
 fi
 
+# Copy man page
 [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
 
+# Ensure man page exists for RPM packaging (create empty file if missing)
 if [ ! -f "%{buildroot}%{install_prefix}/share/man/man1/tesseract.1" ]; then
   touch %{buildroot}%{install_prefix}/share/man/man1/tesseract.1
 fi
