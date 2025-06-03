@@ -103,7 +103,7 @@ jobs:
           Requires:   libpng 
           Requires:   libtiff 
           Requires:   zlib 
-          Requires:   libwebp 
+          Requires:   libwebp
           Requires:   libjpeg-turbo
 
           %global install_prefix /usr/local
@@ -129,7 +129,7 @@ jobs:
           cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
           
           cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
-          cp -a %{install_prefix}/lib/pkgconfig/leptonica.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          cp -a %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
           
           # Copy contents of include directories
           cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
@@ -147,7 +147,7 @@ jobs:
           %{install_prefix}/bin/tesseract
           %{install_prefix}/lib/*
           %{install_prefix}/lib/pkgconfig/tesseract.pc
-          %{install_prefix}/lib/pkgconfig/leptonica.pc
+          %{install_prefix}/lib/pkgconfig/lept.pc
           %dir %{install_prefix}/include/tesseract
           %{install_prefix}/include/tesseract/*
           %dir %{install_prefix}/include/leptonica
@@ -320,7 +320,7 @@ jobs:
           cp -a %{install_prefix}/lib/* %{buildroot}%{install_prefix}/lib/
           
           cp -a %{install_prefix}/lib/pkgconfig/tesseract.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
-          cp -a %{install_prefix}/lib/pkgconfig/leptonica.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
+          cp -a %{install_prefix}/lib/pkgconfig/lept.pc %{buildroot}%{install_prefix}/lib/pkgconfig/
           
           # Copy contents of include directories
           cp -a %{install_prefix}/include/tesseract/* %{buildroot}%{install_prefix}/include/tesseract/
@@ -338,7 +338,7 @@ jobs:
           %{install_prefix}/bin/tesseract
           %{install_prefix}/lib/*
           %{install_prefix}/lib/pkgconfig/tesseract.pc
-          %{install_prefix}/lib/pkgconfig/leptonica.pc
+          %{install_prefix}/lib/pkgconfig/lept.pc
           %dir %{install_prefix}/include/tesseract
           %{install_prefix}/include/tesseract/*
           %dir %{install_prefix}/include/leptonica
