@@ -374,8 +374,15 @@ jobs:
     steps:
       - name: Install OBS CLI (osc)
         run: |
+          # Install pip if not available
           sudo apt-get update
-          sudo apt-get install -y osc
+          sudo apt-get install -y python3-pip
+          
+          # Install latest osc from PyPI to avoid imp module issues with Python 3.12
+          pip3 install --user osc
+          
+          # Add pip user bin to PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Download RPM artifact
         uses: actions/download-artifact@v4
