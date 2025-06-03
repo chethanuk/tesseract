@@ -109,7 +109,6 @@ ldconfig
 %{install_prefix}/bin/tesseract
 %{install_prefix}/lib*/libtesseract.so*
 %{install_prefix}/lib*/libleptonica.so*
-%{install_prefix}/lib*/liblept.so*
 %{install_prefix}/lib*/pkgconfig/tesseract.pc
 %{install_prefix}/lib*/pkgconfig/lept.pc
 %{install_prefix}/include/tesseract/
