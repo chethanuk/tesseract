@@ -186,7 +186,7 @@ jobs:
       - name: Upload Spec File as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tesseract-ocr-spec
+          name: tesseract-ocr-spec-rhel8
           path: ~/rpmbuild/SPECS/${{ env.SPEC_FILENAME }}
           if-no-files-found: error
 
@@ -371,21 +371,29 @@ jobs:
           echo "Amazon Linux 2 RPMs created:"
           find ${HOME}/rpmbuild/RPMS -name "*.rpm" -print
 
+      - name: Copy Amazon Linux 2 artifacts to workspace
+        run: |
+          # The workspace is mounted at /__w/tesseract/tesseract
+          mkdir -p /__w/tesseract/tesseract/amazon-linux-artifacts/rpm
+          mkdir -p /__w/tesseract/tesseract/amazon-linux-artifacts/spec
+          cp ${HOME}/rpmbuild/RPMS/*/*.rpm /__w/tesseract/tesseract/amazon-linux-artifacts/rpm/
+          cp ${HOME}/rpmbuild/SPECS/tesseract-ocr-al2.spec /__w/tesseract/tesseract/amazon-linux-artifacts/spec/
+          echo "Artifacts copied to workspace"
+          ls -la /__w/tesseract/tesseract/amazon-linux-artifacts/rpm/
+          ls -la /__w/tesseract/tesseract/amazon-linux-artifacts/spec/
+
       - name: Upload Amazon Linux 2 RPM as Artifact
-        # v4 of upload-artifact requires Node.js 20 (which causes the GLIBC issue on Amazon Linux 2)
-        # v3 uses Node.js 16, but is being deprecated
-        # v2 uses Node.js 12, which should work with Amazon Linux 2's older GLIBC
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: tesseract-ocr-rpm-al2
-          path: ~/rpmbuild/RPMS/**/*.rpm
+          path: amazon-linux-artifacts/rpm/*.rpm
           if-no-files-found: error
 
       - name: Upload Amazon Linux 2 Spec File as Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: tesseract-ocr-spec-al2
-          path: ~/rpmbuild/SPECS/tesseract-ocr-al2.spec
+          path: amazon-linux-artifacts/spec/tesseract-ocr-al2.spec
           if-no-files-found: error
 
   publish_to_obs:
@@ -399,23 +407,39 @@ jobs:
           sudo apt-get install -y osc
 
       - name: Download RPM artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-rpm
           path: /tmp/tesseract-rpm-artifact
 
-      - name: Download Spec File artifact
-        uses: actions/download-artifact@v2
+      - name: Download AlmaLinux 8 spec file artifact
+        uses: actions/download-artifact@v4
         with:
-          name: tesseract-ocr-spec
-          path: /tmp/tesseract-spec-artifact
+          name: tesseract-ocr-spec-rhel8
+          path: /tmp/tesseract-spec-artifact-rhel8
+
+      - name: Download Amazon Linux 2 RPM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tesseract-ocr-rpm-al2
+          path: /tmp/tesseract-rpm-artifact-al2
+
+      - name: Download Amazon Linux 2 spec file artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tesseract-ocr-spec-al2
+          path: /tmp/tesseract-spec-artifact-al2
 
       - name: List downloaded artifacts
         run: |
           echo "Downloaded RPM artifact contents:"
           ls -R /tmp/tesseract-rpm-artifact
           echo "Downloaded Spec artifact contents:"
-          ls -R /tmp/tesseract-spec-artifact
+          ls -R /tmp/tesseract-spec-artifact-rhel8
+          echo "Amazon Linux 2 RPM artifact contents:"
+          ls -R /tmp/tesseract-rpm-artifact-al2
+          echo "Amazon Linux 2 Spec artifact contents:"
+          ls -R /tmp/tesseract-spec-artifact-al2
 
       - name: Configure OBS credentials
         env:
@@ -472,17 +496,39 @@ jobs:
             echo "Error: RPM file not found in /tmp/tesseract-rpm-artifact."
             exit 1
           fi
+          SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-rhel8 -name "*.spec" -type f -print -quit)
+          if [ -z "$SPEC_FILE_PATH" ]; then
+            echo "Error: Spec file not found in /tmp/tesseract-spec-artifact-rhel8."
+            exit 1
+          fi
+          
+          # Find Amazon Linux 2 files
+          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2 -name "*.rpm" -type f -print -quit)
+          if [ -z "$AL2_RPM_FILE_PATH" ]; then
+            echo "Error: Amazon Linux 2 RPM file not found."
+            exit 1
+          fi
+          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-al2 -name "*.spec" -type f -print -quit)
+          if [ -z "$AL2_SPEC_FILE_PATH" ]; then
+            echo "Error: Amazon Linux 2 Spec file not found."
+            exit 1
+          fi
+          
+          # Copy new RPM
           cp "$RPM_FILE_PATH" .
           echo "Copied RPM: $(basename "$RPM_FILE_PATH")"
           
           # Copy spec file
-          SPEC_FILE_PATH_ARTIFACT="/tmp/tesseract-spec-artifact/${SPEC_FILENAME_ENV}"
-          if [ ! -f "$SPEC_FILE_PATH_ARTIFACT" ]; then
-            echo "Error: Spec file $SPEC_FILE_PATH_ARTIFACT not found."
-            exit 1
-          fi
-          cp "$SPEC_FILE_PATH_ARTIFACT" .
-          echo "Copied spec file: $(basename "$SPEC_FILE_PATH_ARTIFACT")"
+          cp "$SPEC_FILE_PATH" .
+          echo "Copied spec file: $(basename "$SPEC_FILE_PATH")"
+          
+          # Copy Amazon Linux 2 RPM
+          cp "$AL2_RPM_FILE_PATH" .
+          echo "Copied Amazon Linux 2 RPM: $(basename "$AL2_RPM_FILE_PATH")"
+          
+          # Copy Amazon Linux 2 spec file
+          cp "$AL2_SPEC_FILE_PATH" .
+          echo "Copied Amazon Linux 2 spec file: $(basename "$AL2_SPEC_FILE_PATH")"
           
           # Add new files to OBS
           echo "Adding new files to OBS..."
@@ -511,39 +557,39 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download RPM artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-rpm
           path: /tmp/tesseract-rpm-artifact
 
-      - name: Download Spec File artifact
-        uses: actions/download-artifact@v2
+      - name: Download AlmaLinux 8 spec file artifact
+        uses: actions/download-artifact@v4
         with:
-          name: tesseract-ocr-spec
-          path: /tmp/tesseract-spec-artifact
+          name: tesseract-ocr-spec-rhel8
+          path: /tmp/tesseract-spec-artifact-rhel8
 
       - name: Download Amazon Linux 2 RPM artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-rpm-al2
-          path: /tmp/tesseract-rpm-al2-artifact
+          path: /tmp/tesseract-rpm-artifact-al2
 
       - name: Download Amazon Linux 2 Spec File artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tesseract-ocr-spec-al2
-          path: /tmp/tesseract-spec-al2-artifact
+          path: /tmp/tesseract-spec-artifact-al2
 
       - name: List downloaded artifacts for release
         run: |
           echo "RPM artifact contents for release:"
           ls -R /tmp/tesseract-rpm-artifact
           echo "Spec artifact contents for release:"
-          ls -R /tmp/tesseract-spec-artifact
+          ls -R /tmp/tesseract-spec-artifact-rhel8
           echo "Amazon Linux 2 RPM artifact contents:"
-          ls -R /tmp/tesseract-rpm-al2-artifact
+          ls -R /tmp/tesseract-rpm-artifact-al2
           echo "Amazon Linux 2 Spec artifact contents:"
-          ls -R /tmp/tesseract-spec-al2-artifact
+          ls -R /tmp/tesseract-spec-artifact-al2
 
       - name: Create GitHub Release and Upload Assets
         env:
@@ -556,19 +602,19 @@ jobs:
             echo "Error: RPM file not found in /tmp/tesseract-rpm-artifact."
             exit 1
           fi
-          SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact -name "*.spec" -type f -print -quit)
+          SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-rhel8 -name "*.spec" -type f -print -quit)
           if [ -z "$SPEC_FILE_PATH" ]; then
-            echo "Error: Spec file not found in /tmp/tesseract-spec-artifact."
+            echo "Error: Spec file not found in /tmp/tesseract-spec-artifact-rhel8."
             exit 1
           fi
           
           # Find Amazon Linux 2 files
-          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-al2-artifact -name "*.rpm" -type f -print -quit)
+          AL2_RPM_FILE_PATH=$(find /tmp/tesseract-rpm-artifact-al2 -name "*.rpm" -type f -print -quit)
           if [ -z "$AL2_RPM_FILE_PATH" ]; then
             echo "Error: Amazon Linux 2 RPM file not found."
             exit 1
           fi
-          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-al2-artifact -name "*.spec" -type f -print -quit)
+          AL2_SPEC_FILE_PATH=$(find /tmp/tesseract-spec-artifact-al2 -name "*.spec" -type f -print -quit)
           if [ -z "$AL2_SPEC_FILE_PATH" ]; then
             echo "Error: Amazon Linux 2 Spec file not found."
             exit 1
