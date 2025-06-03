@@ -414,7 +414,6 @@ jobs:
         run: |
           dnf -y update
           dnf -y install dnf-plugins-core
-          dnf -y install epel-release
           dnf -y groupinstall 'Development Tools'
           dnf -y install \
             automake \
