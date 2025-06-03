@@ -50,7 +50,7 @@ jobs:
           Subkey-Type: RSA
           Subkey-Length: 4096
           Name-Real: Tesseract OCR Build Bot
-          Name-Email: tesseract-build@github.com
+          Name-Email: tesseract-chethan-build@github.com
           Expire-Date: 1y
           %no-protection
           %commit

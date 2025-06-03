@@ -126,6 +126,6 @@ ldconfig
 %{install_prefix}/share/man/man1/tesseract.1
 
 %changelog
-* ${DATE} Tesseract OCR Build Bot <tesseract-build@github.com> - ${TESSERACT_VERSION}-1.amzn2023.leptonica${LEPTONICA_VERSION}
+* ${DATE} Tesseract OCR Build Bot <tesseract-chethan-build@github.com> - ${TESSERACT_VERSION}-1.amzn2023.leptonica${LEPTONICA_VERSION}
 - Automated build of Tesseract ${TESSERACT_VERSION} with Leptonica ${LEPTONICA_VERSION}
 - Built for Amazon Linux 2023 with lib64 support

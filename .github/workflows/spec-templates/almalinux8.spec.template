@@ -109,6 +109,6 @@ ldconfig
 %{install_prefix}/share/man/man1/tesseract.1
 
 %changelog
-* ${DATE} Tesseract OCR Build Bot <tesseract-build@github.com> - ${TESSERACT_VERSION}-1.el8.leptonica${LEPTONICA_VERSION}
+* ${DATE} Tesseract OCR Build Bot <tesseract-chethan-build@github.com> - ${TESSERACT_VERSION}-1.el8.leptonica${LEPTONICA_VERSION}
 - Automated build of Tesseract ${TESSERACT_VERSION} with Leptonica ${LEPTONICA_VERSION}
 - Built for AlmaLinux 8
