@@ -142,6 +142,10 @@ jobs:
           fi
           
           [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
+          # Ensure man page exists for RPM packaging (create empty file if missing)
+          if [ ! -f "%{buildroot}%{install_prefix}/share/man/man1/tesseract.1" ]; then
+            touch %{buildroot}%{install_prefix}/share/man/man1/tesseract.1
+          fi
 
           %files
           %{install_prefix}/bin/tesseract
@@ -333,6 +337,10 @@ jobs:
           fi
           
           [ -f "%{install_prefix}/share/man/man1/tesseract.1" ] && cp -a %{install_prefix}/share/man/man1/tesseract.1 %{buildroot}%{install_prefix}/share/man/man1/
+          # Ensure man page exists for RPM packaging (create empty file if missing)
+          if [ ! -f "%{buildroot}%{install_prefix}/share/man/man1/tesseract.1" ]; then
+            touch %{buildroot}%{install_prefix}/share/man/man1/tesseract.1
+          fi
 
           %files
           %{install_prefix}/bin/tesseract
