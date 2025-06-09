@@ -97,21 +97,35 @@ ldconfig
 rm -f /etc/ld.so.conf.d/tesseract.conf
 ldconfig
 
+%package devel
+Summary: Development files for Tesseract OCR
+Group: Development/Libraries
+Requires: %{name} = %{version}-%{release}
+
+%description devel
+Development files (headers, static libraries, pkgconfig and CMake files) for Tesseract OCR.
+
 %files
 %{install_prefix}/bin/tesseract
 %{install_prefix}/lib/libtesseract.so*
 %{install_prefix}/lib/libleptonica.so*
+%{install_prefix}/share/tessdata/
+%{install_prefix}/share/man/man1/tesseract.1
+
+%files devel
 %{install_prefix}/lib/libtesseract.a
 %{install_prefix}/lib/libleptonica.a
 %{install_prefix}/lib/libtesseract.la
 %{install_prefix}/lib/libleptonica.la
-%{install_prefix}/lib/cmake/
+%{install_prefix}/lib/cmake/LeptonicaConfig.cmake
+%{install_prefix}/lib/cmake/LeptonicaConfig-version.cmake
+%{install_prefix}/lib/liblept.so*
+%{install_prefix}/lib/liblept.a
+%{install_prefix}/lib/liblept.la
 %{install_prefix}/lib/pkgconfig/tesseract.pc
 %{install_prefix}/lib/pkgconfig/lept.pc
 %{install_prefix}/include/tesseract/
 %{install_prefix}/include/leptonica/
-%{install_prefix}/share/tessdata/
-%{install_prefix}/share/man/man1/tesseract.1
 
 %changelog
 * ${DATE} Tesseract OCR Build Bot <tesseract-chethan-build@github.com> - ${TESSERACT_VERSION}-1.el8.leptonica${LEPTONICA_VERSION}

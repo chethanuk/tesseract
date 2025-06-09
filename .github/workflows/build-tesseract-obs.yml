@@ -83,7 +83,7 @@ jobs:
       max-parallel: 4
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
     container:
       image: almalinux:8
       options: --privileged
@@ -200,7 +200,7 @@ jobs:
       max-parallel: 4
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
     container:
       image: amazonlinux:2023
       options: --privileged
@@ -327,7 +327,7 @@ jobs:
       max-parallel: 2
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
     
     steps:
       - name: Install OBS CLI (osc)
@@ -508,7 +508,7 @@ jobs:
       max-parallel: 2
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
     permissions:
       contents: write
 
@@ -673,7 +673,7 @@ jobs:
       max-parallel: 2
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
         os: ["almalinux:8", "amazonlinux:2023"]
         include:
           - os: "almalinux:8"
@@ -690,19 +690,18 @@ jobs:
       - name: Install prerequisites
         run: |
           ${{ matrix.pkg_manager }} -y update
-          # Handle curl-minimal vs curl conflict in Amazon Linux 2023
-          if [ "${{ matrix.os }}" = "amazonlinux:2023" ]; then
-            # Remove curl-minimal if installed and install wget only
-            ${{ matrix.pkg_manager }} -y remove curl-minimal || true
-            ${{ matrix.pkg_manager }} -y install wget
-          else
-            ${{ matrix.pkg_manager }} -y install wget curl
-          fi
+          # Install wget for all OS types
+          ${{ matrix.pkg_manager }} -y install wget
 
       - name: Wait for release to be available
         run: |
           echo "Waiting 30 seconds for GitHub release propagation..."
           sleep 30
+
+      - name: Install Leptonica
+        run: |
+          wget -O leptonica-1.80.rpm https://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/leptonica-1.80.0-4.el9.1.x86_64.rpm &&\
+          dnf install -y leptonica-1.80.rpm
 
       - name: Download RPM from GitHub Release
         env:
@@ -786,7 +785,7 @@ jobs:
       max-parallel: 2
       matrix:
         tesseract_version: ["5.3.1"] # "5.3.4", "5.4.1", "5.5.1"
-        leptonica_version: ["1.85.0"]  # "1.82.0", 
+        leptonica_version: ["1.80.0"]   # "1.85.0"
         os: ["opensuse/leap:15.5", "almalinux:8", "amazonlinux:2023"]
         include:
           - os: "opensuse/leap:15.5"
@@ -810,10 +809,10 @@ jobs:
         run: |
           if [ "${{ matrix.pkg_manager }}" = "zypper" ]; then
             zypper --non-interactive update
-            zypper --non-interactive install wget curl
+            zypper --non-interactive install wget
           else
             ${{ matrix.pkg_manager }} -y update
-            ${{ matrix.pkg_manager }} -y install wget curl
+            ${{ matrix.pkg_manager }} -y install wget
           fi
 
       - name: Wait for OBS to sync
@@ -823,13 +822,13 @@ jobs:
 
       - name: Add OBS Repository
         env:
-          OBS_PROJECT: home:chethanuk1989
-          OBS_PACKAGE: tesseract-ocr
+          OBS_PROJECT: home:chethanuk
+          OBS_PACKAGE: tesseract5
         run: |
           if [ "${{ matrix.repo_type }}" = "opensuse" ]; then
             # For openSUSE
             zypper --non-interactive addrepo \
-              "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/openSUSE_Leap_15.5/" \
+              "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/openSUSE_Leap_15.5/" \
               "tesseract-obs"
             zypper --non-interactive --gpg-auto-import-keys refresh
           elif [ "${{ matrix.os_name }}" = "el8" ]; then
@@ -837,10 +836,10 @@ jobs:
             cat > /etc/yum.repos.d/tesseract-obs.repo << EOF
           [tesseract-obs]
           name=Tesseract OCR from OBS
-          baseurl=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/RHEL_8/
+          baseurl=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/RHEL_8/
           enabled=1
           gpgcheck=1
-          gpgkey=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/RHEL_8/repodata/repomd.xml.key
+          gpgkey=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/RHEL_8/repodata/repomd.xml.key
           EOF
             ${{ matrix.pkg_manager }} -y install epel-release
             ${{ matrix.pkg_manager }} -y makecache
@@ -849,24 +848,24 @@ jobs:
             cat > /etc/yum.repos.d/tesseract-obs.repo << EOF
           [tesseract-obs]
           name=Tesseract OCR from OBS
-          baseurl=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/AmazonLinux_2023/
+          baseurl=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/AmazonLinux_2023/
           enabled=1
           gpgcheck=1
-          gpgkey=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/AmazonLinux_2023/repodata/repomd.xml.key
+          gpgkey=https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/AmazonLinux_2023/repodata/repomd.xml.key
           EOF
             ${{ matrix.pkg_manager }} -y makecache
           fi
 
       - name: Import GPG Key
         env:
-          OBS_PROJECT: home:chethanuk1989
+          OBS_PROJECT: home:chethanuk
         run: |
           if [ "${{ matrix.repo_type }}" = "rhel" ]; then
             # Import the GPG key for RPM-based systems
             if [ "${{ matrix.os_name }}" = "el8" ]; then
-              rpm --import "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/RHEL_8/repodata/repomd.xml.key"
+              rpm --import "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/RHEL_8/repodata/repomd.xml.key"
             else
-              rpm --import "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/AmazonLinux_2023/repodata/repomd.xml.key"
+              rpm --import "https://download.opensuse.org/repositories/${OBS_PROJECT//://}/${OBS_PACKAGE}/AmazonLinux_2023/repodata/repomd.xml.key"
             fi
           fi
 
@@ -1003,7 +1002,7 @@ jobs:
           echo "#### From OBS Repository:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo '# Add OBS repository' >> $GITHUB_STEP_SUMMARY
-          echo 'sudo dnf config-manager --add-repo https://download.opensuse.org/repositories/home:chethanuk1989/RHEL_8/home:chethanuk1989.repo' >> $GITHUB_STEP_SUMMARY
+          echo 'sudo dnf config-manager --add-repo https://download.opensuse.org/repositories/home:chethanuk/tesseract5/RHEL_8/home:chethanuk:tesseract5.repo' >> $GITHUB_STEP_SUMMARY
           echo 'sudo dnf install tesseract-ocr' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           
